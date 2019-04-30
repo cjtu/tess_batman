@@ -76,7 +76,7 @@ def make_batman(paramfile, outdir):
         for w in potential_widths:
             a = (w * (100)**2)**(1.0/3.0)
             lim = np.arccos((1 + r)/(a))/(2 * np.pi) * 360
-            inc = np.linspace(90, lim, 10)
+            inc = np.linspace(90, lim, 100)
             for i in inc: 
                 incs.append(i)
                 radii.append(r)

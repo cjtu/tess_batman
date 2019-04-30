@@ -1,10 +1,10 @@
 # Batman Parameter File
 LIGHTCURVE_TABLE = batmanCurves_big.csv
 PARAMETERS_TABLE = batmanParams_big.csv
-LOG_R_MIN  = -5
+LOG_R_MIN  = -1
 LOG_R_MAX  = -1
-NUM_R_STEP = 160
+NUM_R_STEP = 1
 LOG_W_MIN  = 0
 LOG_W_MAX  = 5
-NUM_W_STEP = 160
+NUM_W_STEP = 2500
 
