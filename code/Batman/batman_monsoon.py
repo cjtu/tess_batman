@@ -37,7 +37,7 @@ def make_lightcurve(r, i, width, u_type, u_param, t):
 #param = input('Enter name of the parameter file: ')
 
 
-def make_batman(paramfile, outdir):
+def make_batman(paramfile, outdir, norm=False, write=True, verbosity=0):
     ''' Make the batman curves.
 
     PARAMETER RANGES:
@@ -50,23 +50,25 @@ def make_batman(paramfile, outdir):
     Limb darkening: 
     '''
    # read the parameter file
-    print("reading param file",flush=True)
+    if verbosity:
+        print("Reading param file",flush=True)
     with open(paramfile, "r") as file: 
         data = file.readlines()
         lc_file = outdir+data[1][19:-1]
         pc_file = outdir+data[2][19:-1]
-        r_min = float(data[3][13:-1])
-        r_max = float(data[4][13:-1])
-        r_step = float(data[5][13:-1])
-        w_min = float(data[6][13:-1])
-        w_max = float(data[7][13:-1])
-        w_step = float(data[8][13:-1])
+        r_min = float(data[3].split("=")[1])
+        r_max = float(data[4].split("=")[1])
+        r_step = float(data[5].split("=")[1])
+        w_min = float(data[6].split("=")[1])
+        w_max = float(data[7].split("=")[1])
+        w_step = float(data[8].split("=")[1])
         
 # this was a sanity check
 # print(lc_file, pc_file, r_min, r_max, r_step, w_min, w_max, w_step)
 
 # set up range of parameters
-    print("Setting param ranges",flush=True)
+    if verbosity:
+        print("Setting param ranges",flush=True)
     potential_radii = np.logspace(r_min, r_max, r_step)
     potential_widths = np.logspace(w_min, w_max, w_step)
     radii = []
@@ -106,26 +108,29 @@ def make_batman(paramfile, outdir):
     batmanDict = {'times': t}
     for i in range(len(batmanParams)): 
         p = batmanParams[i]
-        f = make_lightcurve(p['rp'], p['i'], p['width'], p['ld'], 
+        lc = make_lightcurve(p['rp'], p['i'], p['width'], p['ld'], 
                             [float(val) for val in p['u'].split()], t)
         name = 'curve ' + str(i)
-        batmanDict[name] = f
-        if i % 100 == 0:
+        if norm:
+            lcmax = np.max(lc)
+            lcmin = np.min(lc)
+            lc = (lc-lcmin)/(lcmax-lcmin)
+        batmanDict[name] = lc
+        if verbosity and (i % 100 == 0):
             print("Generated {}/{} curves in {} s".format(i+1,len(batmanParams),time()-start),flush=True)
     
     batmanCurves = Table(batmanDict)
     end = time()
     print("Generated {} curves in {} s".format(i, end-start),flush=True)
             
-# could do this seperately 
-    twrite = time()
-    print("Writing batmanParams to file",flush=True)
-    ascii.write(batmanParams, pc_file, format='csv', overwrite=True, comment='#')
-    print("Wrote params in {} s".format(time()-twrite),flush=True)
-    print("Writing batmanCurves to file",flush=True)
-    ascii.write(batmanCurves, lc_file, format='csv', overwrite=True, comment='#')
-    print("Wrote both files in {} s".format(time()-twrite),flush=True)
-
+    # Write batman params and curves files
+    if write:
+        twrite = time()
+        print("Writing files",flush=True)
+        ascii.write(batmanParams, pc_file, format='csv', overwrite=True, comment='#', fast_writer=False)
+        ascii.write(batmanCurves, lc_file, format='csv', overwrite=True, comment='#', fast_writer=False)
+        print("Wrote files in {} s".format(time()-twrite),flush=True)
+    return(batmanParams, batmanCurves)
 
 def main():
     import argparse
