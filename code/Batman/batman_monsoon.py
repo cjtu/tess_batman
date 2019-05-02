@@ -78,7 +78,7 @@ def make_batman(paramfile, outdir, norm=False, write=True, verbosity=0):
         for w in potential_widths:
             a = (w * (100)**2)**(1.0/3.0)
             lim = np.arccos((1 + r)/(a))/(2 * np.pi) * 360
-            inc = np.linspace(90, lim, 100)
+            inc = np.linspace(90, lim, 11)[:-1]  # last inc always fails so exclude
             for i in inc: 
                 incs.append(i)
                 radii.append(r)
@@ -104,25 +104,32 @@ def make_batman(paramfile, outdir, norm=False, write=True, verbosity=0):
 # actually generate the curves and add them to the curve file
     print("Generating curves",flush=True)
     start = time()
-    t = np.arange(-2.5, 2.5, 0.013889)
+    t = np.arange(-30, 30, 0.13889)
     batmanDict = {'times': t}
+    err = 0 # keep track of errored curves
     for i in range(len(batmanParams)): 
         p = batmanParams[i]
-        lc = make_lightcurve(p['rp'], p['i'], p['width'], p['ld'], 
+        c = make_lightcurve(p['rp'], p['i'], p['width'], p['ld'], 
                             [float(val) for val in p['u'].split()], t)
-        name = 'curve ' + str(i)
+        name = ID[i]
         if norm:
-            lcmax = np.max(lc)
-            lcmin = np.min(lc)
-            lc = (lc-lcmin)/(lcmax-lcmin)
-        batmanDict[name] = lc
+            cmax = np.max(c)
+            cmin = np.min(c)
+            c = (c-cmin)/(cmax-cmin) # scale to [0,1]
+            c = 1-c # flip
+            c = c / np.sum(c) # normalize area under curve to 1
+            c = 1-c # flip back
+            if np.isnan(c).any() or (sum(c==1) < 5):
+                print("Batman {} failed".format(ID[i]))
+                err += 1
+                continue            
+        batmanDict[name] = c
         if verbosity and (i % 100 == 0):
-            print("Generated {}/{} curves in {} s".format(i+1,len(batmanParams),time()-start),flush=True)
+            print("Generated {}/{} curves in {} s".format(i+1-err,len(batmanParams),time()-start),flush=True)
     
     batmanCurves = Table(batmanDict)
     end = time()
-    print("Generated {} curves in {} s".format(i, end-start),flush=True)
-            
+    print("Generated {}/{} curves in {} s".format(len(batmanParams)-err,len(batmanParams),time()-start),flush=True)            
     # Write batman params and curves files
     if write:
         twrite = time()

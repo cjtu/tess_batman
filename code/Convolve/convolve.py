@@ -6,6 +6,7 @@ import numpy as np
 from scipy.signal import fftconvolve
 from astropy.io import ascii, fits
 from astropy.table import Table, Column
+import matplotlib.pyplot as plt
 
 # def convolve(curves):
 #     """For parallel"""
@@ -54,12 +55,11 @@ def open_tess_fits(tess_fpath, norm=False):
         tess_flux[np.isnan(tess_flux)] = med
         
         if norm:
+#             tess_flux[tess_flux > np.median(tess_flux)] = np.median(tess_flux)
             tmin = np.min(tess_flux)
             tmax = np.max(tess_flux)
             tess_flux = (tess_flux - tmin)/(tmax-tmin)
-#             tmean = np.mean(tess_flux)
-#             tstd = np.std(tess_flux)
-#             tess_flux = (tess_flux - tmean)/tstd
+
     except Exception as e: 
         print("ERROR reading file: ", tess_fpath, " with error: ", e,flush=True)
         return None, None
@@ -72,10 +72,9 @@ def convolve(tess_time, tess_flux, batmanCurves, curve_names, num_keep=10, plot=
     convs = np.zeros(num_keep)
     print("Starting convolutions...",flush=True)
     for i, curvename in enumerate(curve_names):
-        # run convolution
-        # new way
+        # do convolution
         batman_curve = batmanCurves[curvename]
-        conv = np.abs(fftconvolve(-tess_flux, 1-batman_curve, 'same'))
+        conv = np.abs(fftconvolve(1-tess_flux, (1-batman_curve), 'same'))
         ind_max = np.argmax(conv)
         conv_max = conv[ind_max]
         
@@ -91,7 +90,8 @@ def convolve(tess_time, tess_flux, batmanCurves, curve_names, num_keep=10, plot=
             curves.append(curvename)
             times[i] = tess_time[ind_max]
             convs[i] = conv_max
-            
+        if plot:
+            plt.plot(tess_time, conv, label=curvename)
 
     conv_time = time.time() - conv_start
     print("Convolved {} curves in {:.3} s".format(len(curve_names), conv_time),flush=True)
@@ -145,6 +145,7 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
     
     # Do convolution on all tess files
     for tind, tess_fpath in enumerate(tess_names):
+        tess_start = time.time()
         tess_fname = p.basename(tess_fpath)
         print("Starting TESS file: {}".format(tess_fname),flush=True)
         
@@ -177,7 +178,7 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
                 ascii.write(candidates, outpath, format='csv', overwrite=True, comment='#', fast_writer=False)
                 print("Wrote file {} at {} s".format(outname,time.time()-tess_start),flush=True)
                 # reset dicts
-                d = {key : [] for key in ['sector','tessFile','curveID','tcorr','correlation']}
+#                 d = {key : [] for key in ['sector','tessFile','curveID','tcorr','correlation']}
                 s=e+1
     candidates = Table(d,names=['sector','tessFile','curveID','tcorr','correlation'])
 

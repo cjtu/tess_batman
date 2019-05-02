@@ -13,6 +13,8 @@ import numpy as np
 from scipy.stats import norm
 import math
 import pandas as pd
+import os.path as op
+from time import time
 
 #define the batman parameters
 def make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t):
@@ -40,53 +42,76 @@ def make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t):
     flux = m.light_curve(params)          #calculates light curve
     return flux
 
-def make_table(tess_dir, params_file, candidates_file):
-    #read table
-    params = pd.read_csv(params_file)
-    candidates = pd.read_csv(candidates_file)
-    candidates["curveID"] = candidates["curveID"].str.replace(" ", "")
-    df = pd.merge(candidates, params, on = "curveID", how = "left")
-    df.to_csv("merged.csv", index = False)
-    #make empty chi-squared list
+def get_chi_sq(df, tess_dir):
+    current_fname = ""
     chi_squared = np.zeros(len(df))
     for i, row in df.iterrows():
-        fname = tess_dir + "/" + row["sector"] + "/" + row["tessFile"]
-        #open fits file
-        fits.info(fname)
-        fits.getdata(fname, ext = 1).columns
-        with fits.open(fname, mode = "readonly") as hdulist:
-            tess_bjds = hdulist[1].data['TIME']
-            pdcsap_fluxes = hdulist[1].data['PDCSAP_FLUX']
+        start = time()
+        fname = op.join(tess_dir, row["sector"], row["tessFile"])
+        if fname != current_fname:
+            #open fits file
+            with fits.open(fname, mode = "readonly") as hdulist:
+                tess_bjds = hdulist[1].data['TIME']
+                pdcsap_fluxes = hdulist[1].data['PDCSAP_FLUX']
+            print("Opened file ",fname)
+            current_fname = fname
+                
         #get params for this row
         T0 = row["tcorr"] - tess_bjds[0]
         RP = row["rp"]
         INC = row["i"]
         width = row["width"]
+        
+        start_min = time()
         #find the lightcurve minima to calculate the exoplanet period
         arr = pdcsap_fluxes / np.nanmedian(pdcsap_fluxes)
         arr[np.isnan(arr)] = np.nanmedian(arr)
         mu, std = norm.fit(1 / arr)
         peaks, _ = find_peaks(1 / arr, height = mu + 4 * std, distance = 1000)
         p = np.diff(tess_bjds[peaks])
+#         print("Got minima in {} s".format(time()-start_min), flush=True)
+        
         #define parameters
         PER = np.mean(p)
         u_type = 'quadratic'
         u_param = [0.1, 0.3]
-        t = tess_bjds - tess_bjds[0]        
+        t = tess_bjds - tess_bjds[0]     
+        
         #normalize flux
-        fluxes_array = np.array(pdcsap_fluxes)
-        outcounts = [i for i in fluxes_array if i >= np.mean(np.nan_to_num(fluxes_array))]
+        start_norm = time()
+        outcounts = np.nan_to_num(pdcsap_fluxes[pdcsap_fluxes > np.nanmean(pdcsap_fluxes)])
         mu, sigma = norm.fit(outcounts)
-        normalized_fluxes = fluxes_array / mu
-        normalized_sigma = np.array([math.sqrt(i) / mu for i in fluxes_array])        
+        normalized_fluxes = pdcsap_fluxes / mu
+        normalized_sigma = np.sqrt(pdcsap_fluxes)/mu
+#         print("Norm flux in {} s".format(time()-start_norm), flush=True)
+
         #calculate reduced chi-squared
+        start_chisq = time()
         reduced_chi_squared = np.nansum(((normalized_fluxes - make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t)) ** 2 / normalized_sigma ** 2) / 8)
-        #add reduced chi-squared values to list
-        chi_squared[i] = reduced_chi_squared
+#         print("calc chisq in {} s".format(time()-start_chisq), flush=True)
+        
+        #add reduced chi-squared values to array
+        chi_squared[i] = reduced_chi_squared    
+#         print("Computed {} chisq: {:.1f} in {:.4f} s".format(row["curveID"],reduced_chi_squared, time()-start), flush=True)
+
+    return chi_squared
+    
+def make_table(tess_dir, params_file, candidates_file):
+    start = time()
+    #read table
+    params = pd.read_csv(params_file)
+    candidates = pd.read_csv(candidates_file)
+    candidates["curveID"] = candidates["curveID"].str.replace(" ", "")
+    df = pd.merge(candidates, params, on = "curveID", how = "left")
+    df.to_csv("merged.csv", index = False)
+
     #add reduced chi-squared values to column in .csv file
-    df["reduced chi-squared"] = chi_squared
+    df["reducedChiSq"] = get_chi_sq(df, tess_dir)
+    
     #write table
-    df.to_csv("chisquared_values.csv")   
+    outfile = "chisquared_values.csv"
+    df.to_csv(outfile, index=False)   
+    print("Wrote table {} in {} s".format(outfile, time()-start), flush=True)
 
 def main():
     import argparse
