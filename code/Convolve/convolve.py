@@ -187,6 +187,59 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
     print("===END TCONVOLVE===",flush=True)
     return candidates
 
+def get_chi_sq(df, tess_dir):
+    current_fname = ""
+    chi_squared = np.zeros(len(df))
+    for i, row in df.iterrows():
+        start = time()
+        fname = op.join(tess_dir, row["sector"], row["tessFile"])
+        if fname != current_fname:
+            #open fits file
+            with fits.open(fname, mode = "readonly") as hdulist:
+                tess_bjds = hdulist[1].data['TIME']
+                pdcsap_fluxes = hdulist[1].data['PDCSAP_FLUX']
+            print("Opened file ",fname)
+            current_fname = fname
+                
+        #get params for this row
+        T0 = row["tcorr"] - tess_bjds[0]
+        RP = row["rp"]
+        INC = row["i"]
+        width = row["width"]
+        
+        start_min = time()
+        #find the lightcurve minima to calculate the exoplanet period
+        arr = pdcsap_fluxes / np.nanmedian(pdcsap_fluxes)
+        arr[np.isnan(arr)] = np.nanmedian(arr)
+        mu, std = norm.fit(1 / arr)
+        peaks, _ = find_peaks(1 / arr, height = mu + 4 * std, distance = 1000)
+        p = np.diff(tess_bjds[peaks])
+#         print("Got minima in {} s".format(time()-start_min), flush=True)
+        
+        #define parameters
+        PER = np.mean(p)
+        u_type = 'quadratic'
+        u_param = [0.1, 0.3]
+        t = tess_bjds - tess_bjds[0]     
+        
+        #normalize flux
+        start_norm = time()
+        outcounts = np.nan_to_num(pdcsap_fluxes[pdcsap_fluxes > np.nanmean(pdcsap_fluxes)])
+        mu, sigma = norm.fit(outcounts)
+        normalized_fluxes = pdcsap_fluxes / mu
+        normalized_sigma = np.sqrt(pdcsap_fluxes)/mu
+#         print("Norm flux in {} s".format(time()-start_norm), flush=True)
+
+        #calculate reduced chi-squared
+        start_chisq = time()
+        reduced_chi_squared = np.nansum(((normalized_fluxes - make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t)) ** 2 / normalized_sigma ** 2) / 8)
+#         print("calc chisq in {} s".format(time()-start_chisq), flush=True)
+        
+        #add reduced chi-squared values to array
+        chi_squared[i] = reduced_chi_squared    
+#         print("Computed {} chisq: {:.1f} in {:.4f} s".format(row["curveID"],reduced_chi_squared, time()-start), flush=True)
+
+    return chi_squared
 
     
 def tconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_dir, nprocs, chunks, verbosity=0):
@@ -329,13 +382,11 @@ def main():
     parser.add_argument("end", type=int)
     parser.add_argument("output_dir", type=str) 
     parser.add_argument("batman_suffix",type=str,default="")
-    parser.add_argument("nprocs", type=int)
-    parser.add_argument("chunks", type=int)
     parser.add_argument("-v", "--verbosity", default=False, 
                         action="store_true", help="Print console output")
     args = parser.parse_args()
-    tconvolve(args.tess_dir, args.batman_dir, args.batman_suffix, args.sector, args.start, 
-          args.end, args.output_dir, args.nprocs, args.chunks, args.verbosity)
+    tbconvolve(args.tess_dir, args.batman_dir, args.batman_suffix, args.sector, args.start, 
+          args.end, args.output_dir, num_keep=-1, norm_tess=True, verbosity=args.verbosity)
           
 if __name__ == '__main__':
     main()

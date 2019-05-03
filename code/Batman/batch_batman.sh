@@ -2,8 +2,8 @@
 #SBATCH --job-name=gen_batman
 #SBATCH --workdir=/common/contrib/classroom/ast520/tess_batman/code/Batman/
 #SBATCH --output=/common/contrib/classroom/ast520/tess_batman/data/log/batman%A.log
-#SBATCH --time=05:00:00
-#SBATCH --mem=40000
+#SBATCH --time=01:00:00
+#SBATCH --mem=10000
 #SBATCH --account=ast520-spr19
 
 # 2500 curves ran in 2 minutes
@@ -12,11 +12,11 @@
 
 TBP=/common/contrib/classroom/ast520/tess_batman
 echo Starting
-
+module load anaconda
 source activate batman
 
-pcmd="python $TBP/code/Batman/batman_monsoon.py $TBP/code/Batman/param.txt $TBP/data/"
-echo running command: $pcmd
-srun $pcmd
+cmd="python $TBP/code/Batman/batman_monsoon.py $TBP/code/Batman/param.txt $TBP/data/"
+echo running command: $cmd
+srun $cmd
 echo Finished
 
