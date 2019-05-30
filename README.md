@@ -4,6 +4,27 @@ Welcome to the AST 520 final project! See below for some useful links, and a des
 ## Hypothesis
 Exoplanets can be identified with similar accuracy and precision as citizen scientists by convolving TESS light curve data with modelled transit curves from BATMAN.
 
+## Set up environment
+The packages needed are in the `environment.yml` file. You can install this environment on Monsoon with:
+
+```bash
+cd /common/contrib/classroom/ast520/tess_batman
+module load anaconda
+conda env create -f environment.yml
+```
+
+Finally, activate the environment with
+
+```bash
+source activate tessbatman 
+```
+
+If you need to update or install any packages, activate the environment, run the following command and replace the `environment.yml` with the new one:
+
+```bash
+conda env export > environment.yml
+```
+
 ## Links
 Some useful links:
 
