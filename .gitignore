@@ -4,4 +4,6 @@ tmp
 log
 *.swp
 *.ipy*
+*.csv
+*.param
 .vscode

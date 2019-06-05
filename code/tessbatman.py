@@ -30,7 +30,7 @@ def make_batman_config(rmin, rmax, rstep, wmin, wmax, wstep, suffix=""):
     params = ['batmanCurves{}.csv'.format(suffix), 
               'batmanParams{}.csv'.format(suffix),
               *map(str, (rmin, rmax, rstep, wmin, wmax, wstep))]
-    paramfile = 'param{}.txt'.format(suffix)
+    paramfile = '{}.param'.format(suffix)
     with open(paramfile, 'w') as f:
         f.write('# Batman Parameter File\n')
         for i in range(len(params)):
