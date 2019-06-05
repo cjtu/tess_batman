@@ -6,6 +6,7 @@ It is divided into Batman, TESS, and Convolve functions.
 from time import time
 import glob
 import os.path as p
+import json
 
 import numpy as np
 import pandas as pd
@@ -19,23 +20,37 @@ import batman
 
 
 # Batman Functions
-def make_batman_config(rmin, rmax, rstep, wmin, wmax, wstep, suffix=""):
+def make_batman_config(tmin, tmax, tstep, wmin, wmax, wnum, wlog=True, suffix="", path="."):
     """
-    Write batam param file used to generate batmanCurves.
+    Write batman parameters to a JSON param file used to generate batmanCurves.
+
+    Parameters
+    ----------
+    tmin (num): minimum time
+    tmax (num): maximum time
+    tnum (num): time step
+    wmin (num): minimum width
+    wmax (num): maximum width
+    wnum (num): number of widths to generate
+    wlog (bool): use logspace for widths if True, else use linspace
+    suffix (str): append suffix to config and curve file names
     """
-    suffix = '_test'
-    param_names = ['LIGHTCURVE_TABLE','PARAMETERS_TABLE','LOG_R_MIN',
-                   'LOG_R_MAX','NUM_R_STEP','LOG_W_MIN','LOG_W_MAX',
-                   'NUM_W_STEP']
-    params = ['batmanCurves{}.csv'.format(suffix), 
-              'batmanParams{}.csv'.format(suffix),
-              *map(str, (rmin, rmax, rstep, wmin, wmax, wstep))]
-    paramfile = '{}.param'.format(suffix)
-    with open(paramfile, 'w') as f:
-        f.write('# Batman Parameter File\n')
-        for i in range(len(params)):
-            f.write(' = '.join([param_names[i], params[i]]) + '\n')
-            
+    params = {}
+    params["curves_fname"] = p.join(path, 'batmanCurves{}.csv'.format(suffix))
+    params["params_fname"] = p.join(path, 'batmanParams{}.csv'.format(suffix))
+    params["tmin"] = tmin
+    params["tmax"] = tmax
+    params["tstep"] = tstep
+    params["wmin"] = wmin
+    params["wmax"] = wmax
+    params["wnum"] = wnum
+    params["wlog"] = wlog
+
+    outfile = p.join(path, 'batmanConfig{}.param'.format(suffix))
+    with open(outfile, "w+") as f:
+        json.dump(params, f)
+        print("Batman config written to {}".format(outfile))
+
 
 def make_lightcurve(t0, r, i, p, width, u_type, u_param, t):
     """
@@ -73,73 +88,82 @@ def make_lightcurve(t0, r, i, p, width, u_type, u_param, t):
     return flux
 
 
-def make_batman(paramfile, outdir, norm=False, write=True, verbosity=0):
+def make_batman(paramfile, outdir, norm=False, write=True, verbose=True):
     """ 
-    Make the batman curves.
+    Return astropy tables of batman params and generated curves based on the
+    parameters given in paramfile. 
 
+    Parameters
+    ----------
+    paramfile (str): path to JSON param file written by make_batman_config
+    outdir (str): path to write output curve and param files
+    norm (bool): normalize curves to unit integrated area
+    write (bool): write param and curve tables to files
+    verbose (bool): print logging and timing info
     """
-    # TODO: clean up this import & the batmanParams (use dict)
-   # read the parameter file
-    if verbosity:
-        print("Reading param file",flush=True)
-    with open(paramfile, "r") as file: 
-        data = file.readlines()
-        lc_file = outdir+data[1][19:-1]
-        pc_file = outdir+data[2][19:-1]
-        r_min = float(data[3].split("=")[1])
-        r_max = float(data[4].split("=")[1])
-        r_step = float(data[5].split("=")[1])
-        w_min = float(data[6].split("=")[1])
-        w_max = float(data[7].split("=")[1])
-        w_step = float(data[8].split("=")[1])
-        
+    # read batman param file
+    if verbose:
+        print("Reading param file", flush=True)
 
-    # set up range of parameters
-    if verbosity:
-        print("Setting param ranges",flush=True)
-    potential_radii = np.logspace(r_min, r_max, r_step)
-    potential_widths = np.logspace(w_min, w_max, w_step)
-    radii = []
-    widths = []
-    incs = []
-    for r in potential_radii:
-        for w in potential_widths:
-            a = (w * (100)**2)**(1.0/3.0)
-            lim = np.arccos((1 + r)/(a))/(2 * np.pi) * 360
-            inc = np.linspace(90, lim, 11)[:-1]  # last inc always fails so exclude
-            for i in inc: 
-                incs.append(i)
-                radii.append(r)
-                widths.append(w)
+    with open(paramfile, "r") as f:
+        d = json.load(f)
+
+    # init time array and parameter ranges
+    if verbose:
+        print("Setting param ranges", flush=True)
+
+    t = np.arange(d['tmin'], d['tmax'], d['tstep'])
+
+    if d['wlog']:
+        widths = np.logspace(d['wmin'], d['wmax'], d['wnum'])
+    else:
+        widths = np.linspace(d['wmin'], d['wmax'], d['wnum'])
+
+    nparams = len(widths)
+    radii = 0.1 * np.ones(nparams)
+    incs = 90 * np.ones(nparams)
+    u = ['0.1 0.3'] * nparams
+    ld = ['quadratic'] * nparams
+    per = 100*np.ones(nparams)
+    t0 = np.zeros(nparams)
+    e = np.zeros(nparams)
+    w = np.zeros(nparams)
+
+    # Old
+    # radii = []
+    # widths = []
+    # incs = []
+    # widths_arr = np.logspace(d['wmin'], d['wmax'], d['wnum'])
+    # radii_arr = np.logspace(d['rmin'], d['rmax'], d['rnum'])
+    # for r in radii_arr:
+    #     for w in widths_arr:
+    #         a = (w * (100)**2)**(1.0/3.0)
+    #         lim = np.arccos((1 + r)/(a))/(2 * np.pi) * 360
+    #         inc = np.linspace(90, lim, 11)[:-1]  # last inc always fails so exclude
+    #         for i in inc: 
+    #             incs.append(i)
+    #             radii.append(r)
+    #             widths.append(w)
                 
-    # set up file that will eventually become the curve id file
-    batmanParams = tbl.Table([radii, incs, widths], names =('rp', 'i', 'width'))
-    u = tbl.Column(['0.1 0.3'] * len(batmanParams))
-    ld = tbl.Column(['quadratic'] * len(batmanParams))
-    t0 = tbl.Column(np.zeros(len(batmanParams))) # set t0 to 0
-    e = tbl.Column(np.zeros(len(batmanParams)))
-    w = tbl.Column(np.zeros(len(batmanParams)))
-    batmanParams.add_column(u, name='u')
-    batmanParams.add_column(ld, name='ld')
-    batmanParams.add_column(t0, name='t0')
-    batmanParams.add_column(e, name='e')
-    batmanParams.add_column(w, name='w')
+    # add params to batman param table
+    curveID = ['curve{}'.format(i) for i in range(nparams)]
+    cols = [curveID, radii, incs, widths, per, u, ld, t0, e, w]
+    colnames = ['curveID', 'rp', 'i', 'width', 'per', 'u', 'ld', 't0', 'e', 'w']
+    batmanParams = tbl.Table(cols, names=colnames)
 
-    # make an ID
-    ID = tbl.Column(['curve{}'.format(i) for i in range(len(batmanParams))])
-    batmanParams['curveID'] = ID
-
-    # actually generate the curves and add them to the curve file
-    print("Generating curves",flush=True)
-    start = time()
-    t = np.arange(-30, 30, 0.13889)
+    # generate curves
+    if verbose:
+        print("Generating curves", flush=True)
+        start = time()
     batmanDict = {'times': t}
     err = 0 # keep track of errored curves
     for i in range(len(batmanParams)): 
         p = batmanParams[i]
-        c = make_lightcurve(0, p['rp'], p['i'], 100, p['width'], p['ld'], 
+        cID = p['curveID']
+        c = make_lightcurve(p['t0'], p['rp'], p['i'], p['per'], p['width'], p['ld'], 
                             [float(val) for val in p['u'].split()], t)
-        name = ID[i]
+
+        # normalize curve c
         if norm:
             cmax = np.max(c)
             cmin = np.min(c)
@@ -148,23 +172,41 @@ def make_batman(paramfile, outdir, norm=False, write=True, verbosity=0):
             c = c / np.sum(c) # normalize area under curve to 1
             c = 1-c # flip back
             if np.isnan(c).any() or (sum(c==1) < 5):
-                print("Batman {} failed".format(ID[i]))
+                print("Batman {} failed".format(cID), flush=True)
                 err += 1
-                continue            
-        batmanDict[name] = c
-        if verbosity and (i % 100 == 0):
-            print("Generated {}/{} curves in {} s".format(i+1-err,len(batmanParams),time()-start),flush=True)
+                continue 
+
+        # Save curve to dict
+        batmanDict[cID] = c
+
+        # Progress report every 100
+        if verbose and (i % 100 == 0):
+            elapsed = time() - start
+            print("Generated {}/{} curves in {} s".format(i+1-err, nparams,
+                                                          elapsed), flush=True)
     
+    # add curves to table
     batmanCurves = tbl.Table(batmanDict)
-    end = time()
-    print("Generated {}/{} curves in {} s".format(len(batmanParams)-err,len(batmanParams),time()-start),flush=True)            
-    # Write batman params and curves files
+    if verbose:
+        elapsed = time() - start
+        print("Generated {}/{} curves in {} s".format(nparams-err, nparams,
+                                                        elapsed), flush=True)            
+    
+    # Write batman params and curves tables to files
     if write:
-        twrite = time()
-        print("Writing files",flush=True)
-        ast.io.ascii.write(batmanParams, pc_file, format='csv', overwrite=True, comment='#', fast_writer=False)
-        ast.io.ascii.write(batmanCurves, lc_file, format='csv', overwrite=True, comment='#', fast_writer=False)
-        print("Wrote files in {} s".format(time()-twrite),flush=True)
+        if verbose:
+            start = time()
+            print("Writing files", flush=True)
+        ast.io.ascii.write(batmanParams, d['params_fname'], format='csv', 
+                            overwrite=True, comment='#', fast_writer=False)
+        if verbose:
+            print("Wrote params to {}".format(d['params_fname']))
+        ast.io.ascii.write(batmanCurves, d['curves_fname'], format='csv', 
+                            overwrite=True, comment='#', fast_writer=False)
+        if verbose:
+            print("Wrote curves to {}".format(d['curves_fname']))
+            elapsed = time() - start
+            print("Wrote files in {} s".format(elapsed), flush=True)
     return(batmanParams, batmanCurves)
 
 
