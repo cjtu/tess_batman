@@ -345,7 +345,7 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
         return None
     
     # Read in Batman Curves
-    batmanCurves_file = p.join(batman_dir,"batmanCurves"+batman_suffix)
+    batmanCurves_file = p.join(batman_dir,"batmanCurves{}.csv".format(batman_suffix))
     times, curve_names, batmanCurves = read_batman(batmanCurves_file)
     nbatman = len(curve_names)
     print("Found {} Batman curves".format(nbatman),flush=True)
@@ -359,7 +359,8 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
 
 
     #Init dict for saving best batman curves 
-    d = {key : [] for key in ['sector','tessFile','curveID','tcorr','correlation', 'chisq']}
+    colnames = ['sector', 'tessFile', 'curveID', 'tcorr', 'correlation', 'chisq']
+    d = {key : [] for key in colnames}
     s = 0
     nerr = 0  # count number of failed files
     
@@ -387,7 +388,7 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
         d['tcorr'].extend(times)
         d['correlation'].extend(convs)
         d['chisq'].extend(get_chi_sq(tess_time, tess_flux, times, params))
-
+        print(len(d['tcorr']), len(d['chisq']))
         if write:
             # Make table every writechunk tess curves
             if (tind % writechunk == writechunk-1) or (tind == len(tess_names)-1):
@@ -395,18 +396,19 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
                 outname = 'candidates_sector{}_s{}_e{}.csv'.format(sector, s, e)
                 outpath = p.join(output_dir, outname)
                 # Convert to astropy table and write to csv
-                candidates = tbl.Table(d,names=['sector','tessFile','curveID','tcorr','correlation', 'chisq'])
+                candidates = tbl.Table(d,names=colnames)
                 ast.io.ascii.write(candidates, outpath, format='csv', overwrite=True, comment='#', fast_writer=False)
                 print("Wrote file {} at {} s".format(outname,time()-tess_start),flush=True)
                 # reset dicts
 #                 d = {key : [] for key in ['sector','tessFile','curveID','tcorr','correlation']}
                 s=e+1
-    candidates = tbl.Table(d,names=['sector','tessFile','curveID','tcorr','correlation'])
+    candidates = tbl.Table(d,names=colnames)
     
     # make merged table
-    cdf = pd.DataFrame.from_dict(d, columns=['sector','tessFile','curveID','tcorr','correlation'])
-    df = pd.merge(cdf, params, on = "curveID", how = "left")
-    df.to_csv(p.join(output_dir, "chisq.csv"))
+    cdf = pd.DataFrame.from_dict(d)
+    cdf = cdf[colnames]
+    df = pd.merge(cdf, params, on="curveID", how="left")
+    df.to_csv(p.join(output_dir, "chisq{}.csv".format(batman_suffix)))
     
     tconv_time = time() - tconv_start
     print("Convolved {}/{} tess files with {} curves in {:.3} s".format(ntess-nerr, ntess, nbatman, tconv_time),flush=True)
@@ -415,7 +417,7 @@ def tbconvolve(tess_dir, batman_dir, batman_suffix, sector, start, end, output_d
 
 def get_chi_sq(tess_time, tess_flux, tcorr, params):
     current_fname = ""
-    chi_squared = np.zeros(len(params))
+    chi_squared = []
     #find the lightcurve minima to calculate the exoplanet period
     arr = tess_flux / np.nanmedian(tess_flux)
     arr[np.isnan(arr)] = np.nanmedian(arr)
@@ -442,7 +444,7 @@ def get_chi_sq(tess_time, tess_flux, tcorr, params):
         width = row["width"]
 
         #calculate reduced chi-squared
-        chi_squared[i] = np.nansum(((normalized_fluxes - make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t)) ** 2 / normalized_sigma ** 2) / 8)
+        chi_squared.append(np.nansum(((normalized_fluxes - make_lightcurve(T0, RP, INC, PER, width, u_type, u_param, t)) ** 2 / normalized_sigma ** 2) / 8))
 
     return chi_squared
     
